@@ -4,6 +4,7 @@ import os
 import glob
 import time
 import sys
+import getopt
 #========================================
 root = "/tmp/Data";
 srcDir = root+"/VideoSrc";
@@ -20,11 +21,16 @@ fileName, fileExtension = os.path.splitext(videoLoc)
 faceDetectScript = "/home/samba/Video/facedetect.py"
 
 splitLength = 2
+numSplits = 0
 
-doCleanup = 1
+cleanup = 1
 splitVideo = 1
 doDecode = 1
 doDetect = 1
+
+fps = 0
+gopSize = 0
+duration = 0
 
 #contains output string
 l = []
@@ -65,7 +71,7 @@ def getNumFrames(v):
 
 #========================================
 #cleanup old data
-if doCleanup == 1:
+def doCleanup():
 		#delete files
 		if os.path.exists(splitDir):
 				for files in os.listdir(splitDir):
@@ -80,60 +86,64 @@ if doCleanup == 1:
 				for files in os.listdir(outDir):
 						if os.path.isfile(files):
 								os.remove(outDir+'/'+files)
-		print "Cleanup Done!"
+		#create folders if necessary
+		if not os.path.exists(splitDir):
+				os.makedirs(splitDir)
+		if not os.path.exists(decodeDir):
+				os.makedirs(decodeDir)
+		if not os.path.exists(opencvDir):
+				os.makedirs(opencvDir)
 
-#create folders if necessary
-if not os.path.exists(splitDir):
-		os.makedirs(splitDir)
-if not os.path.exists(decodeDir):
-		os.makedirs(decodeDir)
-if not os.path.exists(opencvDir):
-		os.makedirs(opencvDir)
+		print "Cleanup Done!"
 
 #========================================
 #get number of frames
-print "Number of Frame = " + str(getNumFrames(videoLoc))
+#print "Number of Frame = " + str(getNumFrames(videoLoc))
 
 #========================================
 #get fps of video
-fps = 0
-cmd2 = "ffmpeg -i " + videoLoc + " slkjdf 2>&1 | grep Video:"
-f = os.popen(cmd2)
-fpsOut = f.read().rstrip()
-fpsOut = fpsOut.split(',')
-for param in fpsOut:
-		if param.find('fps') >= 0:
-				param = param.replace("fps", "").strip()
-				fps = int(float(param))
+def findFPS():
+		global fps
+		cmd2 = "ffmpeg -i " + videoLoc + " slkjdf 2>&1 | grep Video:"
+		f = os.popen(cmd2)
+		fpsOut = f.read().rstrip()
+		fpsOut = fpsOut.split(',')
+		for param in fpsOut:
+				if param.find('fps') >= 0:
+						param = param.replace("fps", "").strip()
+						fps = int(float(param))
 
-print "FPS = " + str(fps)
+		print "FPS = " + str(fps)
 
 #========================================
 #get gop of video
-gopSize = 0
-cmd3 = "ffprobe -v quiet -show_format -show_streams -i " + videoLoc
-f = os.popen(cmd3)
-fpsOut = f.read().rstrip()
-fpsOut = fpsOut.split('\n')
-for param in fpsOut:
-		if param.find('gop_size') >= 0:
-				param = param.replace("gop_size=", "").strip()
-				gopSize = int(float(param))
+def findGOP():
+		global gopSize
+		cmd3 = "ffprobe -v quiet -show_format -show_streams -i " + videoLoc
+		f = os.popen(cmd3)
+		fpsOut = f.read().rstrip()
+		fpsOut = fpsOut.split('\n')
+		for param in fpsOut:
+				if param.find('gop_size') >= 0:
+						param = param.replace("gop_size=", "").strip()
+						gopSize = int(float(param))
 
-if gopSize > 0:
-		print "GOP = " + str(gopSize)
-else:
-		print "GOP = 0 [Could not find GOP]"
+		if gopSize > 0:
+				print "GOP = " + str(gopSize)
+		else:
+				print "GOP = 0 [Could not find GOP]"
 
 
 #========================================
 #get duration of video
-cmd4 = "ffprobe -v quiet -show_format " + videoLoc + " | grep duration="
-f = os.popen(cmd4)
-duration = f.read().rstrip()
-duration = duration.replace("duration=","").strip()
-duration = int(float(duration))
-print "Duration = " + str(duration)
+def getDuration():
+		global duration
+		cmd4 = "ffprobe -v quiet -show_format " + videoLoc + " | grep duration="
+		f = os.popen(cmd4)
+		duration = f.read().rstrip()
+		duration = duration.replace("duration=","").strip()
+		duration = int(float(duration))
+		print "Duration = " + str(duration)
 
 #========================================
 #split frames
@@ -141,70 +151,133 @@ print "Duration = " + str(duration)
 #cmd5 = "ffmpeg -i " + videoLoc + " -f segment -c copy -segment_time_delta 0.5 -map 0 " + splitDir + "/out-%3d" + fileExtension + " 2>&1"
 #cmd5 = "ffmpeg -i " + videoLoc + " -f segment -c copy -segment_time " + str((duration * (fps/gopSize )) if gopSize > 0 else (numberOfFrames)) + " -map 0 " + outDir + "/out-%3d" + fileExtension + " 2>&1"
 #cmd5 = "ffmpeg -i " + videoLoc + " -c copy -ss " + getTimeStr(i) + " -t 00:00:02 -map 0  " + splitDir +"/out"+str(index).zfill(3)+fileExtension + " 2>&1 >/dev/null"
-index = 0
-if splitVideo == 1:
-		print "Splitting..."
-		if gopSize > 0:
-				cmd5 = "ffmpeg -i " + videoLoc + " -f segment -c copy -segment_time " + str(duration * (fps/gopSize )) + " -map 0 " + splitDir + "/out-%3d" + fileExtension + " 2>&1"
-				print cmd5
-				os.system(cmd5)
-		else:
-				for i in range(0, duration, splitLength):
-						index += 1
-						cmd5 = "ffmpeg -i " + videoLoc + " -vcodec copy -acodec copy -ss " + getTimeStr(i) + " -t 00:00:02 " + splitDir +"/out"+str(index).zfill(3)+fileExtension + " 2>&1 >/dev/null"
+def splitFrames():
+		global splitLength, numSplits
+		if splitLength == 0 and numSplits == 0:
+					print "Both splitlength and num splits are 0.. defaulting to splitlength 2seconds"
+					splitLength = 2
+		sl = 0
+		if numSplits > 0:
+					print "Splitting based on number of splits"
+					sl = int(duration/numSplits)
+		elif splitLength > 0:
+					sl = splitLength
+					
+		index = 0
+		if splitVideo == 1:
+				print "Splitting..."
+				if gopSize > 0:
+						cmd5 = "ffmpeg -i " + videoLoc + " -f segment -c copy -segment_time " + str(duration * (fps/gopSize )) + " -map 0 -y " + splitDir + "/out-%3d" + fileExtension + " 2>&1"
 						print cmd5
 						os.system(cmd5)
-		print "Done!"
+				else:
+						for i in range(0, duration, sl):
+								index += 1
+								cmd5 = "ffmpeg -i " + videoLoc + " -vcodec copy -acodec copy -ss " + getTimeStr(i) + " -t " + getTimeStr(sl) + " -y " + splitDir +"/out"+str(index).zfill(3)+fileExtension + " 2>&1 >/dev/null"
+								print cmd5
+								os.system(cmd5)
+				print "Done!"
 
 #========================================
 #get time to save
-prevMTime = 0
-timeToSave = 0
-for files in sorted(os.listdir(splitDir)):
-		if files.startswith("."):
-				continue
-		curFileLoc = splitDir+"/"+files
-		fileSize = os.path.getsize(curFileLoc)
-		mtime = os.path.getmtime(curFileLoc)
-		if prevMTime != 0:
-				timeToSave = mtime - prevMTime
-		prevMTime = mtime
-		l.append(files + "," + str(getNumFrames(curFileLoc)) + "," + str(fileSize) + "," + str(timeToSave))
+def processSplit():
+		global l
+		prevMTime = 0
+		timeToSave = 0
+		for files in sorted(os.listdir(splitDir)):
+				if files.startswith("."):
+						continue
+				curFileLoc = splitDir+"/"+files
+				fileSize = os.path.getsize(curFileLoc)
+				mtime = os.path.getmtime(curFileLoc)
+				if prevMTime != 0:
+						timeToSave = mtime - prevMTime
+				prevMTime = mtime
+				l.append(files + "," + str(getNumFrames(curFileLoc)) + "," + str(fileSize) + "," + str(timeToSave))
 
 #========================================
-#decode frames
-curIndex = 0
-if doDecode == 1:
-	for files in sorted(os.listdir(splitDir)):
-			fileName, efileExtension = os.path.splitext(files)
-			cmd6 = "ffmpeg -i " + splitDir + "/" + files + " -f rawvideo -vcodec rawvideo " + decodeDir + "/" + fileName + ".raw"
-			print cmd6
-			st = time.time()
-			os.system(cmd6)
-			et = time.time()
-			fileSize = 0
-			if os.path.exists(decodeDir+"/"+fileName+".raw"):
-					fileSize = os.path.getsize(decodeDir+"/"+fileName+".raw")
-			l[curIndex] = l[curIndex] + "," + str(fileSize) + "," + str(et-st)
-			curIndex+=1
+#decode splits
+def decodeSplits():
+		global l
+		curIndex = 0
+		if doDecode == 1:
+			for files in sorted(os.listdir(splitDir)):
+					fileName, efileExtension = os.path.splitext(files)
+					cmd6 = "ffmpeg -i " + splitDir + "/" + files + " -f rawvideo -vcodec rawvideo " + decodeDir + "/" + fileName + ".raw"
+					print cmd6
+					st = time.time()
+					os.system(cmd6)
+					et = time.time()
+					fileSize = 0
+					if os.path.exists(decodeDir+"/"+fileName+".raw"):
+							fileSize = os.path.getsize(decodeDir+"/"+fileName+".raw")
+					l[curIndex] = l[curIndex] + "," + str(fileSize) + "," + str(et-st)
+					curIndex+=1
 
 #========================================
 #face detect frames
-curIndex = 0
-if doDetect == 1:
-	for files in sorted(os.listdir(splitDir)):
-			fileName, efileExtension = os.path.splitext(files)
-			cmd7 = faceDetectScript + " " + splitDir + "/" + files
-			print cmd7
-			st = time.time()
-			os.system(cmd7)
-			l[curIndex] = l[curIndex] + "," + str(time.time()-st)
-			curIndex+=1
+def runAlgo():
+		global l
+		curIndex = 0
+		if doDetect == 1:
+			for files in sorted(os.listdir(splitDir)):
+					fileName, efileExtension = os.path.splitext(files)
+					cmd7 = faceDetectScript + " " + splitDir + "/" + files
+					print cmd7
+					st = time.time()
+					os.system(cmd7)
+					l[curIndex] = l[curIndex] + "," + str(time.time()-st)
+					curIndex+=1
 
 #========================================
 #save output
-f = open(dataOutputLoc, "w")
-f.write("Split Name, # Frames, Split Size, Time to split (s), Decode Size, Time to decode (s), opencv time (s)\n");
-for item in l:
-		f.write(item + "\n")
-f.close()
+def generateOutput():
+		f = open(dataOutputLoc, "w")
+		f.write("Split Name, # Frames, Split Size, Time to split (s), Decode Size, Time to decode (s), opencv time (s)\n");
+		for item in l:
+				f.write(item + "\n")
+		f.close()
+
+#========================================
+#main
+usagestr = 'Phase1.py -ss <splitsize> -sd <splitduration>'
+def main(argv):
+		global splitLength
+		global numSplits
+		try:
+			opts, args = getopt.getopt(argv, "hl:n:", ["splitlength=","numsplits="])
+		except getopt.GetoptError:
+			print usagestr
+			sys.exit(2);
+		
+		for opt, arg in opts:
+				print opt + ", " + arg
+				if opt == "-h":
+						print usagestr
+						sys.exit()
+				elif opt in ("-l", "--splitlength"):
+						splitLength = int(arg)
+						numSplits = 0
+				elif opt in ("-n", "--numsplits"):
+						numSplits = int(arg)
+						splitLength = 0
+		print "NumberSplits=" + str(numSplits)
+		print "splitLength=" + str(splitLength)
+		
+		if cleanup == 1:
+					doCleanup()
+		findFPS()
+		findGOP()
+		getDuration()
+		if splitVideo == 1:
+					splitFrames()
+					processSplit()
+		if doDecode == 1:
+					decodeSplits()
+		if doDetect == 1:
+					runAlgo()
+		generateOutput()
+		
+		
+if __name__ == "__main__":
+		main(sys.argv[1:])
