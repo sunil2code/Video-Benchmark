@@ -21,7 +21,16 @@ fileName, fileExtension = os.path.splitext(videoLoc)
 faceDetectScript = "/home/samba/Video/facedetect.py"
 
 splitLength = 2
+#numSplits can also be used as number of computers when asked for estimate
 numSplits = 0
+#bandwidth in MBps
+bandwidth = 121
+#latency in ms
+latency = 3
+estimate = 0
+sizeOfSplit = 0
+timeToSplit = 0
+timeToRunAlgo = 0
 
 cleanup = 1
 splitVideo = 1
@@ -152,7 +161,7 @@ def getDuration():
 #cmd5 = "ffmpeg -i " + videoLoc + " -f segment -c copy -segment_time " + str((duration * (fps/gopSize )) if gopSize > 0 else (numberOfFrames)) + " -map 0 " + outDir + "/out-%3d" + fileExtension + " 2>&1"
 #cmd5 = "ffmpeg -i " + videoLoc + " -c copy -ss " + getTimeStr(i) + " -t 00:00:02 -map 0  " + splitDir +"/out"+str(index).zfill(3)+fileExtension + " 2>&1 >/dev/null"
 def splitFrames():
-		global splitLength, numSplits
+		global splitLength, numSplits, timeToSplit
 		if splitLength == 0 and numSplits == 0:
 					print "Both splitlength and num splits are 0.. defaulting to splitlength 2seconds"
 					splitLength = 2
@@ -162,6 +171,9 @@ def splitFrames():
 					sl = int(duration/numSplits)
 		elif splitLength > 0:
 					sl = splitLength
+
+		if estimate == 1:
+				duration = sl
 					
 		index = 0
 		if splitVideo == 1:
@@ -175,7 +187,11 @@ def splitFrames():
 								index += 1
 								cmd5 = "ffmpeg -i " + videoLoc + " -vcodec copy -acodec copy -ss " + getTimeStr(i) + " -t " + getTimeStr(sl) + " -y " + splitDir +"/out"+str(index).zfill(3)+fileExtension + " 2>&1 >/dev/null"
 								print cmd5
+								timeToSplit = time.time()
 								os.system(cmd5)
+								timeToSplit = time.time() - timeToSplit
+								if estimate == 1:
+										sizeOfSplit = os.path.getsize(splitDir +"/out"+str(index).zfill(3)+fileExtension)
 				print "Done!"
 
 #========================================
@@ -227,6 +243,8 @@ def runAlgo():
 					st = time.time()
 					os.system(cmd7)
 					l[curIndex] = l[curIndex] + "," + str(time.time()-st)
+					if estimate == 1:
+							timeToRunAlgo = time.time()-st
 					curIndex+=1
 
 #========================================
@@ -239,13 +257,21 @@ def generateOutput():
 		f.close()
 
 #========================================
+#save output
+def doEstimate():
+		transferTime = (numSplits-1)*2*(latency/1000)*(sizeOfSplit/(bandwidth*1000))
+		splitTime = numSplits * timeToSplit
+		algoTime = numSplits * timeToRunAlgo
+		print transferTime+splitTime+algoTime
+
+#========================================
 #main
 usagestr = 'Phase1.py -ss <splitsize> -sd <splitduration>'
 def main(argv):
 		global splitLength
 		global numSplits
 		try:
-			opts, args = getopt.getopt(argv, "hl:n:", ["splitlength=","numsplits="])
+			opts, args = getopt.getopt(argv, "hl:n:b:w:e:", ["splitlength=","numsplits=","bandwidth=","latency=","estimate="])
 		except getopt.GetoptError:
 			print usagestr
 			sys.exit(2);
@@ -261,6 +287,12 @@ def main(argv):
 				elif opt in ("-n", "--numsplits"):
 						numSplits = int(arg)
 						splitLength = 0
+				elif opt in ("-b", "--bandwidth"):
+						bandwidth = int(arg)
+				elif opt in ("-w", "--latency"):
+						latency = int(arg)
+				elif opt in ("-e", "--estimate"):
+						estimate = 1
 		print "NumberSplits=" + str(numSplits)
 		print "splitLength=" + str(splitLength)
 		
@@ -270,13 +302,15 @@ def main(argv):
 		findGOP()
 		getDuration()
 		if splitVideo == 1:
-					splitFrames()
-					processSplit()
+				splitFrames()
+				processSplit()
 		if doDecode == 1:
-					decodeSplits()
+				decodeSplits()
 		if doDetect == 1:
-					runAlgo()
+				runAlgo()
 		generateOutput()
+		if estimate == 1:
+				doEstimate()s
 		
 		
 if __name__ == "__main__":
