@@ -278,7 +278,7 @@ def doEstimate():
 
 #========================================
 #main
-usagestr = 'Phase1.py -ss <splitsize> -sd <splitduration>'
+usagestr = 'Phase1.py -l <splitLength> -n <number of splits/number of computers> -b <bandwidth> -w <latency within comp> -e [1 : to estimate the time]'
 def main(argv):
 		global splitLength
 		global numSplits, estimate, latency, bandwidth
