@@ -1,7 +1,7 @@
 ##Video-Benchmark
 
 
-Goal is to create a framework for a distributed transacoding of videos.
+Goal is to create a framework for distributed video transacoding and post processing.
 
  - Confirmed that splitting the video does not add any penalty.
  - Tries to estimate the total time that a distributed transcoding and face detection on a video would take.
