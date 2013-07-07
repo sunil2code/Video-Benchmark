@@ -1,3 +1,8 @@
+#One liner
+sudo apt-get -y install build-essential cmake pkg-config libjpeg62-dev libtiff4-dev libjasper-dev libgtk2.0-dev libavcodec-dev libavformat-dev libswscale-dev libv4l-dev libdc1394-22-dev libxine-dev libgstreamer0.10-dev libgstreamer-plugins-base0.10-dev python-dev python-numpy libtbb-dev libqt4-dev
+
+#Details
+#========
 #To install OpenCV 2.4.2 or 2.4.3 on the Ubuntu 12.04 operating system, first install a developer environment to build OpenCV.
 sudo apt-get -y install build-essential cmake pkg-config
 
